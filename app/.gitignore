@@ -1,0 +1,34 @@
+# ⛔ Environment variables
+.env
+.env.local
+.env.*.local
+
+# 🧠 Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 🚫 Virtual environments
+venv/
+env/
+
+# 🛠️ IDE / Editor settings
+.vscode/
+.idea/
+*.swp
+
+# 📦 Node modules (if frontend lives here too)
+node_modules/
+
+# 🧹 OS junk
+.DS_Store
+Thumbs.db
+
+# 📊 Logs
+*.log
+
+# ⚙️ Output or cache
+*.sqlite3
+*.db
+.cache/
