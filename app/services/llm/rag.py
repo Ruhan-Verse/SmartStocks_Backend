@@ -3,12 +3,30 @@ import os
 import asyncio
 import google.generativeai as genai
 from dotenv import load_dotenv
+from app.services.fetchers import sector
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
 model = genai.GenerativeModel("gemini-1.5-pro")
+
+def is_aggregate_query(query: str) -> bool:
+    query = query.lower()
+    keywords = [
+        "top performing", "top gainers", "top losers", "best tech stocks",
+        "top 5", "top 10", "most active", "sector leaders", "highest growth",
+        "sector performance", "ai companies","sector analysis", "technology sector",
+        "healthcare sector", "energy sector", "renewable energy sector",
+        "clean energy", "market trends", "industry trends", "dividend paying"
+    ]
+    return any(kw in query for kw in keywords)
+
+def is_sector_theme_query(query: str) -> bool:
+    keywords = ["renewable energy", "AI", "artificial intelligence", "EV", "semiconductors", "cloud computing", "biotech", "green energy", "cybersecurity"]
+    return any(kw.lower() in query.lower() for kw in keywords)
+
+
 
 async def generate(prompt: str) -> str:
     try:
@@ -180,6 +198,37 @@ def extract_symbol(query: str) -> str:
 async def build_context(query: str) -> str:
     context_parts = [f"🔍 User Question: {query}"]
 
+    # ✅ Check for aggregate-style queries first
+    if is_aggregate_query(query):
+        try:
+            sector_info = await sector.get_sector_performance()
+            context_parts.append("\n📊 Sector Performance:")
+            for item in sector_info:
+                context_parts.append(f"- {item['sector']}: {item['change']}")
+        except Exception as e:
+            context_parts.append(f"\n📊 Sector data failed: {str(e)}")
+        context_parts.append("\n📝 Note: This is sector-level analysis. For deeper insights, try specifying individual companies.")
+        return "\n".join(context_parts)
+    
+    # 🌐 Thematic Sector (e.g., "Should I invest in renewable energy?")
+    if is_sector_theme_query(query):
+        try:
+            thematic_news = await get_news_context(query)
+        except Exception as e:
+            thematic_news = f"❌ Failed to fetch sector news: {e}"
+        
+        try:
+            thematic_sentiment = await get_sentiment_context(query)
+        except Exception as e:
+            thematic_sentiment = f"❌ Failed to fetch sentiment: {e}"
+
+        context_parts.append(f"\n📰 Sector News Context:\n{thematic_news}")
+        context_parts.append(f"\n🧠 Sentiment Summary:\n{thematic_sentiment}")
+        context_parts.append("\n📝 Note: This analysis is based on news and sentiment for the sector/theme, not a single company.")
+        return "\n".join(context_parts)
+
+
+    # ✅ Proceed to extract individual stock symbol
     symbol = extract_symbol(query)
     if not symbol:
         context_parts.append("⚠️ Could not extract stock symbol from the query.")
@@ -220,12 +269,46 @@ You are SmartStocks, an intelligent financial assistant. Based on the following 
 Please generate a detailed, analytical, and helpful answer for the user question:
 "{query}"
 
-- Show the entire news availible to you to help the user decide if the stock is good or not in detail.
-- Cross-analyze insights across stock data, news, and crowd sentiment.
-- If data sources conflict, explain the discrepancy.
-- Offer a balanced perspective, but do not guarantee outcomes.
-- Close with a tip or market observation.
-- If Reddit posts are available, quote 2-3 of the most relevant titles and summarize sentiment.
+1. Stock Overview
+   - Show current price, daily high/low, and performance trend.  
+   - Interpret if the price movement is bullish, bearish, or neutral.
+
+2. News Context 
+   - Summarize 3–5 of the most relevant headlines.  
+   - Mention which are positive, neutral, or negative.
+
+3. Sentiment Analysis
+   - HuggingFace: % score and tone.  
+   - Reddit: summarize sentiment of 2–3 top posts (quote titles if available).  
+   - StockTwits (if available).
+
+4. Data Conflicts & Observations 
+   - Do stock price & sentiment contradict? Explain.  
+   - Any red flags or data gaps?
+
+5. Recommendation by Investor Type
+   - Short-term trader: Give trade signal if technicals suggest action.  
+   - Long-term investor: Analyze value, fundamentals, and future outlook.  
+   - Options trader: Suggest strategy if volatility is high.
+
+6. Risks to Watch
+   - Any major regulatory, market, or competitive threats?
+
+7. Conclusion & Tip
+   - Final call based on evidence. Give a clear signal (Buy/Hold/Sell/Caution)  
+   - Provide a smart investing tip or next step.
+
+Do not hallucinate or make up data. If data is missing, explain clearly what is missing and how it would affect the answer.
+
+If some data sources (like stock price, Reddit, GNews, StockTwits) are missing, DO NOT focus on that. Instead:
+
+- Educate the user about the overall investment theme (e.g., Renewable Energy sector).
+- Highlight sector trends using historical or policy-related information.
+- List 3–5 relevant stocks or ETFs with a short description of their role in the sector.
+- Provide risk vs reward for different types of investors (long-term, short-term, options).
+- Offer a bottom-line recommendation: Is this a promising space to watch/invest in?
+- Give a useful investor tip to close.
+Stay confident and useful. If data is missing, acknowledge it in 1 line only — don’t dwell on it.
 Answer:
 """
 
